@@ -1,0 +1,90 @@
+#Samtools index
+
+samtools index 123_sort.bam
+samtools index 456_sort.bam
+samtools index 677_sort.bam
+
+
+
+samtools faidx USVL531_genome_v1.fa
+
+picard CreateSequenceDictionary REFERENCE=USVL531_genome_v1.fa OUTPUT=USVL531_genome_v1.fa.dict
+
+
+#Picard
+picard AddOrReplaceReadGroups I=123_sorted.bam O=123.rg_added_sort.bam SO=coordinate RGPL=Illumina RGID=PE RGLB=PE RGPU=PE RGSM=123 TMP_DIR=./temp_dir1/
+picard AddOrReplaceReadGroups I=677_sort.bam O=677.rg_added_sort.bam SO=coordinate RGPL=Illumina RGID=PE RGLB=PE RGPU=PE RGSM=677 TMP_DIR=./temp_dir/
+picard AddOrReplaceReadGroups I=456_sort.bam O=456.rg_added_sort.bam SO=coordinate RGPL=Illumina RGID=PE RGLB=PE RGPU=PE RGSM=456 TMP_DIR=./temp_dir32/
+
+
+#MarkDuplicates
+java -Xmx4g -jar /System/Volumes/Data/opt/homebrew/Cellar/picard-tools/3.1.1/libexec/picard.jar MarkDuplicates \
+  I=123.rg_added_sort.bam \
+  O=123.dedupped.bam \
+  CREATE_INDEX=true \
+  VALIDATION_STRINGENCY=SILENT \
+  M=123.output.metrics \
+  TMP_DIR=./temp_dir1/
+  
+java -Xmx4g -jar /System/Volumes/Data/opt/homebrew/Cellar/picard-tools/3.1.1/libexec/picard.jar MarkDuplicates \
+  I=456.rg_added_sort.bam \
+  O=456.dedupped.bam \
+  CREATE_INDEX=true \
+  VALIDATION_STRINGENCY=SILENT \
+  M=456.output.metrics \
+  TMP_DIR=./temp_dir626/
+  
+java -Xmx4g -jar /System/Volumes/Data/opt/homebrew/Cellar/picard-tools/3.1.1/libexec/picard.jar MarkDuplicates \
+  I=677.rg_added_sort.bam \
+  O=677.dedupped.bam \
+  CREATE_INDEX=true \
+  VALIDATION_STRINGENCY=SILENT \
+  M=677.output.metrics \
+  TMP_DIR=./temp_dir3/
+
+
+#HaplotypeCaller
+# PATH="/Users/rahulkumar/gatk-4.5.0.0:$PATH"
+gatk HaplotypeCaller \
+     -R USVL531_genome_v1.fa \
+     -I 677.dedupped.bam \
+     -O 677.g.vcf \
+     -ERC GVCF
+
+java -Xmx30g -jar /Users/rahulkumar/gatk/gatk-package-4.5.0.0-local.jar HaplotypeCaller \
+     -R USVL531_genome_v1.fa \
+     -I 123.dedupped.bam \
+     -O 123.g.vcf \
+     -ERC GVCF
+     
+java -Xmx30g -jar /Users/rahulkumar/gatk/gatk-package-4.5.0.0-local.jar HaplotypeCaller \
+     -R USVL531_genome_v1.fa \
+     -I 456.dedupped.bam \
+     -O 456.g.vcf \
+     -ERC GVCF
+     
+
+ls *.g.vcf > vcf.list
+java -Xmx30g -jar /Users/rahulkumar/gatk/gatk-package-4.5.0.0-local.jar CombineGVCFs -R USVL531_genome_v1.fa --variant vcf.list -O combinedVCF.g.vcf.gz
+
+java -Xmx30g -jar /Users/rahulkumar/gatk/gatk-package-4.5.0.0-local.jar GenotypeGVCFs -R USVL531_genome_v1.fa -O mr1_ay_raw.vcf --variant combinedVCF.g.vcf.gz
+
+
+java -Xmx30g -jar /Users/rahulkumar/gatk/gatk-package-4.5.0.0-local.jar SelectVariants -R USVL531_genome_v1.fa -V mr1_ay_raw.vcf --select-type-to-include SNP -O mr1_ay_raw_snps.vcf
+
+
+java -Xmx30g -jar /Users/rahulkumar/gatk/gatk-package-4.5.0.0-local.jar SelectVariants -R USVL531_genome_v1.fa -V mr1_ay_raw.vcf --select-type-to-include INDEL -O mr1_ay_raw_indels.vcf
+
+java -Xmx30g -jar /Users/rahulkumar/gatk/gatk-package-4.5.0.0-local.jar VariantFiltration -R USVL531_genome_v1.fa --filter-expression "QD < 2.0 || (FS > 60.0 )|| MQ < 40.0" --filter-name "my_snp_filter" -V mr1_ay_raw_snps.vcf -O filtered_snps.vcf
+
+java -Xmx30g -jar /Users/rahulkumar/gatk/gatk-package-4.5.0.0-local.jar VariantFiltration -R USVL531_genome_v1.fa --filter-expression "QD < 2.0 || FS > 60.0 || MQ < 40.0" --filter-name "my_indel_filter" -V mr1_ay_raw_indels.vcf -O filtered_indels.vcf
+
+java -Xmx30g -jar /Users/rahulkumar/gatk/gatk-package-4.5.0.0-local.jar SelectVariants -R USVL531_genome_v1.fa -V filtered_snps.vcf -O filtered.selected.snps.vcf --exclude-filtered --exclude-non-variants
+
+java -Xmx30g -jar /Users/rahulkumar/gatk/gatk-package-4.5.0.0-local.jar SelectVariants -R USVL531_genome_v1.fa -V filtered_indels.vcf -O filtered.selected.indels.vcf --exclude-filtered --exclude-non-variants
+
+
+
+java -Xmx150g -jar /Users/rahulkumar/gatk/gatk-package-4.5.0.0-local.jar CollectAllelicCounts -R USVL531_genome_v1.fa --input 123.dedupped.bam --intervals mr1_ay_snps.vcf --output 123_counts.tsv
+java -Xmx150g -jar /Users/rahulkumar/gatk/gatk-package-4.5.0.0-local.jar CollectAllelicCounts -R USVL531_genome_v1.fa --input 456.dedupped.bam --intervals mr1_ay_snps.vcf --output 456_counts.tsv
+    
